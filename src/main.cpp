@@ -76,15 +76,11 @@ void setup() {
   pinMode(MISO, INPUT);
   pinMode(SCK, OUTPUT);
   pinMode(CS, OUTPUT);
-  
-
-
 
   digitalWrite(CS, HIGH);
   digitalWrite(SCK, LOW); 
 
   delay(3000);
-
 
 
   WiFi.begin(SSID, PASSWORD);
