@@ -12,8 +12,13 @@
 
 
 
-#define SSID "Mega-2.4G-32AD"
-#define PASSWORD "f3mXcWDz7C"
+//#define SSID "Mega-2.4G-32AD"
+//#define PASSWORD "f3mXcWDz7C"
+
+
+#define SSID "iPhone"
+#define PASSWORD "alex12345"
+
 
 unsigned long previousDataSampleMilis = 0;
 const long dataSampleInterval = 15000; //USed in milis
@@ -21,6 +26,13 @@ const long dataSampleInterval = 15000; //USed in milis
 
 unsigned long previousPublishedMilis = 0;
 const long publishInterval = 5000; //USed in milis
+
+bool wifiConnectedPreviously = false;
+
+
+unsigned long previousWifiCheck = 0;
+const long wifiCheckInterval = 5000; //USed in milis
+
 
 
 uint16_t bufferCount = 0;
@@ -44,7 +56,7 @@ float temperatureBuffer[TEMPERATURE_BUFFER_SIZE];
 
 
 void SPI_BIT_BANGING(uint8_t ClockCycles, uint16_t period);
-void connectMQTT();
+bool connectMQTT();
 
 
 
@@ -52,6 +64,9 @@ void taskReadSensor();
 
 
 void taskPublishData();
+
+
+void taskCheckWiFi();
 
 uint8_t flag = 0;
 uint16_t dataStored = 0;
@@ -82,28 +97,21 @@ void setup() {
 
 
   WiFi.begin(SSID, PASSWORD);
-
-
-  while (WiFi.status() != WL_CONNECTED){
+  while(WiFi.status()!= WL_CONNECTED){
     delay(500);
     Serial.print(".");
   }
 
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
+  wifiConnectedPreviously = true;
 
-  configTime(0,0,"pool.ntp.org", "time.nist.gov"); //NEED TO GET THE CURRENT TIME SO THE CERTIFICATE WONT INVALIDATE THE CONNECTION
-  Serial.println("Sincronizando hora");
-  while((time(nullptr)<1000000000)){
-    delay(500);
-    Serial.print(".");
-  }
 
-  Serial.println("Hora sincronizada");
-  
+
+
+
   espClient.setInsecure(); //CERTIFICATE TO VALODAITE SERVER AUTHENTICITY
   client.setServer(mqtt_url, mqtt_port); //COnnect to the mqtt server
-
 
 
   
@@ -126,6 +134,15 @@ void loop() {
     previousPublishedMilis = currentMilis;
     taskPublishData();
   }
+
+
+  //Check wifi
+
+  if(currentMilis - previousWifiCheck >= wifiCheckInterval){
+    previousWifiCheck = currentMilis;
+    taskCheckWiFi();
+  }
+
 
       
 }
@@ -155,6 +172,7 @@ void taskPublishData(){
   
   if(!client.connected()){
     connectMQTT();
+    return;
   }
   client.loop();
 
@@ -217,21 +235,49 @@ void SPI_BIT_BANGING(uint8_t ClockCycles, uint16_t period){
 
 }
 
-void connectMQTT(){
-  while(!client.connected()){
+bool connectMQTT(){
+  if(!client.connected()){
     Serial.println("Conectando a HIVEMQ..");
     String clientId = "ESP32S3-Client-";
     clientId += String(random(0xffff), HEX);
 
     if(client.connect(clientId.c_str(), mqtt_user, mqtt_password)){
       Serial.println("Conectado!");
-
+      return true;
     }else{
       Serial.print(" fallo, rc=");
       Serial.print(client.state());
       Serial.println("Intentando de nuevo en 5 segundos");
-      delay(5000);
+      return false;
 
     }
   }
+  return true;
+
+}
+
+
+void taskCheckWiFi(){
+
+
+  if(WiFi.status() != WL_CONNECTED){
+      if(wifiConnectedPreviously){
+        Serial.println("Wifi disconnected, retrying");
+        WiFi.begin(SSID, PASSWORD);
+        wifiConnectedPreviously = false;
+      }
+
+  }else{
+    if(!wifiConnectedPreviously){
+      Serial.print("IP ADDRESS: ");
+      Serial.println(WiFi.localIP());
+      wifiConnectedPreviously = true;
+    } 
+  }
+
+  if((time(nullptr)<1000000000)){
+    configTime(0,0,"pool.ntp.org", "time.nist.gov"); //NEED TO GET THE CURRENT TIME SO THE CERTIFICATE WONT INVALIDATE THE CONNECTION
+    Serial.println("Sincronizando hora");
+  }
+
 }
