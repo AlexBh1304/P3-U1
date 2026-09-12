@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitoreo de Temperatura - Alertas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-slate-900 text-white font-sans min-h-screen p-6">
+    <div class="max-w-4xl mx-auto">
+        <header class="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+                <h1 class="text-3xl font-bold text-cyan-400">Sensor de Temperatura IoT</h1>
+                <p class="text-slate-400 flex items-center gap-2 mt-1">
+                    Última sincronización: <span id="sync-time" class="text-emerald-400 font-mono font-bold">--:--:--</span>
+                </p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+                <button onclick="filterByAlert('ALL')" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-xs font-semibold rounded-lg transition">Todos</button>
+                <button onclick="filterByAlert('ROJA')" class="px-3 py-1.5 bg-red-600/30 text-red-400 border border-red-500/50 hover:bg-red-600/50 text-xs font-semibold rounded-lg transition">🔴 Roja (&gt;30°)</button>
+                <button onclick="filterByAlert('AMARILLA')" class="px-3 py-1.5 bg-yellow-600/30 text-yellow-400 border border-yellow-500/50 hover:bg-yellow-600/50 text-xs font-semibold rounded-lg transition">🟡 Amarilla (20°-30°)</button>
+                <button onclick="filterByAlert('VERDE')" class="px-3 py-1.5 bg-emerald-600/30 text-emerald-400 border border-emerald-500/50 hover:bg-emerald-600/50 text-xs font-semibold rounded-lg transition">🟢 Verde (&lt;20°)</button>
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
+                <h2 class="text-slate-400 text-sm font-semibold uppercase">Última Temperatura</h2>
+                <p id="latest-temp" class="text-5xl font-extrabold text-slate-200 mt-2">-- °C</p>
+            </div>
+            <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
+                <h2 class="text-slate-400 text-sm font-semibold uppercase">Estado del Sistema</h2>
+                <p id="status" class="text-xl font-bold text-cyan-300 mt-4">Iniciando...</p>
+            </div>
+        </div>
+
+        <div class="bg-slate-800 rounded-xl border border-slate-700 shadow-lg overflow-hidden">
+            <div class="p-4 border-b border-slate-700 flex justify-between items-center">
+                <h2 class="font-bold text-lg">Historial de Lecturas</h2>
+                <span id="filter-indicator" class="text-xs text-slate-400">Mostrando: Todos</span>
+            </div>
+            <div class="overflow-x-auto max-h-96">
+                <table class="w-full text-left border-collapse">
+                    <thead class="bg-slate-700 text-slate-300 uppercase text-xs">
+                        <tr>
+                            <th class="p-3">ID</th>
+                            <th class="p-3">Temperatura</th>
+                            <th class="p-3">Alerta</th>
+                            <th class="p-3">Fecha y Hora</th>
+                        </tr>
+                    </thead>
+                    <tbody id="data-table" class="divide-y divide-slate-700 text-sm">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://apnttjwirbaknvzrocul.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_doPGjQFXfbP6cNfrthIX7g_OhiHDUTH';
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        let currentFilter = 'ALL';
+
+        function getAlertInfo(val) {
+            if (val > 30) return { label: 'ALARMA ROJA', badgeClass: 'bg-red-500/20 text-red-400 border border-red-500/40', textClass: 'text-red-400', type: 'ROJA' };
+            if (val >= 20 && val <= 30) return { label: 'ALARMA AMARILLA', badgeClass: 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/40', textClass: 'text-yellow-400', type: 'AMARILLA' };
+            return { label: 'ALARMA VERDE', badgeClass: 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40', textClass: 'text-emerald-400', type: 'VERDE' };
+        }
+
+        async function fetchInitialData() {
+            try {
+                const { data, error } = await supabaseClient
+                    .from('temperaturas')
+                    .select('*')
+                    .order('id', { ascending: false })
+                    .limit(50);
+
+                if (error) throw error;
+
+                document.getElementById('sync-time').innerText = new Date().toLocaleTimeString();
+                document.getElementById('status').innerText = 'Conectado y Escuchando';
+                
+                if (data.length > 0) {
+                    const latest = data[0].valor;
+                    const info = getAlertInfo(latest);
+                    const tempEl = document.getElementById('latest-temp');
+                    tempEl.innerText = latest + ' °C';
+                    tempEl.className = `text-5xl font-extrabold mt-2 ${info.textClass}`;
+                }
+
+                const tbody = document.getElementById('data-table');
+                tbody.innerHTML = '';
+                const filtered = data.filter(row => currentFilter === 'ALL' || getAlertInfo(row.valor).type === currentFilter);
+
+                if (filtered.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-slate-500">No hay registros</td></tr>`;
+                    return;
+                }
+
+                filtered.forEach(row => {
+                    const alert = getAlertInfo(row.valor);
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td class="p-3 text-slate-400">${row.id}</td>
+                        <td class="p-3 font-semibold ${alert.textClass}">${row.valor} °C</td>
+                        <td class="p-3"><span class="px-2.5 py-1 rounded-full text-xs font-bold ${alert.badgeClass}">${alert.label}</span></td>
+                        <td class="p-3 text-slate-300">${new Date(row.created_at).toLocaleString()}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+            } catch (err) {
+                document.getElementById('status').innerText = 'Fallo de Red';
+                console.error(err);
+            }
+        }
+
+        function filterByAlert(type) {
+            currentFilter = type;
+            document.getElementById('filter-indicator').innerText = `Mostrando: ${type}`;
+            fetchInitialData();
+        }
+
+        fetchInitialData();
+        setInterval(fetchInitialData, 3000);
+    </script>
+</body>
+</html>
