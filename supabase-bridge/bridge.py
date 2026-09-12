@@ -4,18 +4,18 @@ from paho.mqtt import client as mqtt_client
 from supabase import create_client, Client 
 
 #supabase configuration
-SUPABASE_URL = "https://apnttjwirbaknvzrocul.supabase.co"
-SUPABASE_KEY = "sb_publishable_doPGjQFXfbP6cNfrthIX7g_OhiHDUTH"
+SUPABASE_URL = ""
+SUPABASE_KEY = ""
 supabase: Client = create_client(SUPABASE_URL,SUPABASE_KEY)
 
 #Broker credentials
 
-broker = "bdd53fed217747629eb941f979434002.s1.eu.hivemq.cloud"
+broker = ""
 port = 8883
-topic = "sensor/temperatura"
-client_id = "python-supabase-local-bridge"
-username = "esp32_s3"
-password = "passwordjeje"
+topic = ""
+client_id = ""
+username = ""
+password = ""
 
 #connection events
 
