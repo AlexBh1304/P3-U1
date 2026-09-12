@@ -2,120 +2,76 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
+#include <secrets.h>
 
-#define SCK   4 //OK
-#define CS    5 //OK
-#define MISO  6 //ok
-
-
+//General Macros
 #define TEMPERATURE_BUFFER_SIZE 1023
 
+//SPI Pin Number Macros
+#define SCK   4 
+#define CS    5 
+#define MISO  6 
 
+//Task intervals
 
-//#define SSID "Mega-2.4G-32AD"
-//#define PASSWORD "f3mXcWDz7C"
+  //Reading interval
+  unsigned long previousDataSampleMilis = 0;
+  const long dataSampleInterval = 15000; 
 
+  //Publishing interval
+  unsigned long previousPublishedMilis = 0;
+  const long publishInterval = 5000; 
 
-#define SSID "iPhone"
-#define PASSWORD "alex12345"
+  //WiFi check interval
+  unsigned long previousWifiCheck = 0;
+  const long wifiCheckInterval = 5000; 
 
-
-unsigned long previousDataSampleMilis = 0;
-const long dataSampleInterval = 15000; //USed in milis
-
-
-unsigned long previousPublishedMilis = 0;
-const long publishInterval = 5000; //USed in milis
-
-bool wifiConnectedPreviously = false;
-
-
-unsigned long previousWifiCheck = 0;
-const long wifiCheckInterval = 5000; //USed in milis
-
-
-
-uint16_t bufferCount = 0;
-
-
-
-//credentials
-
-const char* mqtt_url = "bdd53fed217747629eb941f979434002.s1.eu.hivemq.cloud";
+//MQTT Credentials
+const char* mqtt_url = MQTT_URL;
 const int mqtt_port = 8883;
+const char* mqtt_user = MQTT_USER;
+const char* mqtt_password = MQTT_PASSWORD;
 
-const char* mqtt_user = "esp32_s3";
-const char* mqtt_password = "passwordjeje";
 
+//MQTT client configuration
 WiFiClientSecure espClient;
 PubSubClient    client(espClient);
 
-
-
-
+//Temperature purposes Global Vsariables
 float temperatureBuffer[TEMPERATURE_BUFFER_SIZE];
-
-
-
-
-void SPI_BIT_BANGING(uint8_t ClockCycles, uint16_t period);
-bool connectMQTT();
-
-
-
-void taskReadSensor();
-
-
-void taskPublishData();
-
-
-void taskCheckWiFi();
-
-uint8_t flag = 0;
-uint16_t dataStored = 0;
+uint16_t bufferCount = 0;
 float temperatura = 0.0;
+uint16_t dataStored = 0;
+
+//Flags
+bool wifiConnectedPreviously = false;
+
+//Function Prototypes
+void spiBitBanging(uint8_t ClockCycles, uint16_t period);
+bool connectMQTT();
+void taskReadSensor();
+void taskPublishData();
+void taskCheckWiFi();
+void startupConnectionConfig();
+
 
 void setup() {
+
+  //Serial monitor initialization (only used for debug purposes)  
   Serial.begin(115200);
-
-  // Espera a que el puerto serial esté activo
+  delay(1500);
+  Serial.println("Serial Ready");
   
-  delay(1500); // Margen para que el monitor serie enganche
-
-  Serial.println("LISTO");
-
-  //ledcAttach(5,50, 14);
-  //ledcWrite(5,8192);
-
+  //SPI'S pin configuration
   pinMode(MISO, INPUT);
   pinMode(SCK, OUTPUT);
   pinMode(CS, OUTPUT);
-
   digitalWrite(CS, HIGH);
   digitalWrite(SCK, LOW); 
 
   delay(3000);
-
-  //conecction wifi
-
-  WiFi.begin(SSID, PASSWORD);
-  while(WiFi.status()!= WL_CONNECTED){
-    delay(500);
-    Serial.print(".");
-  }
-
-  Serial.println("IP address: ");
-  Serial.println(WiFi.localIP());
-  wifiConnectedPreviously = true;
-
-
-
-
-
-  espClient.setInsecure(); //CERTIFICATE TO VALODAITE SERVER AUTHENTICITY
-  client.setServer(mqtt_url, mqtt_port); //COnnect to the mqtt server
-
-
+  
+  startupConnectionConfig();
   
 }
 
@@ -123,52 +79,46 @@ void loop() {
 
   unsigned long currentMilis = millis();
 
-//Read temperature
+  //Read temperature (Currently every 15 seconds)
 
   if(currentMilis - previousDataSampleMilis >= dataSampleInterval){
     previousDataSampleMilis = currentMilis;
     taskReadSensor();
   }
 
-//Publish Data
+//Publish Data (Currently every 5 seconds)
 
   if(currentMilis - previousPublishedMilis >= publishInterval){
     previousPublishedMilis = currentMilis;
     taskPublishData();
   }
-
-
-  //Check wifi
+  //Check wifi (Currently every 5 seconds)
 
   if(currentMilis - previousWifiCheck >= wifiCheckInterval){
     previousWifiCheck = currentMilis;
     taskCheckWiFi();
   }
 
-
-      
 }
-
-
-
 
 void taskReadSensor(){
 
-  SPI_BIT_BANGING(16,100);
+  //Get raw value from sensor
+  spiBitBanging(16,100);
 
   Serial.println(dataStored, BIN);
 
+  //If there's space left on the buffer, we stored the data
   if(bufferCount < TEMPERATURE_BUFFER_SIZE){
 
+    //Conversion from raw value to temperature in celcius
     temperatureBuffer[bufferCount] = ((dataStored >> 3) & 0xFFF) * 0.25; 
     bufferCount++;
   }
   
   Serial.println(temperatureBuffer[bufferCount -1]);
 
-
 }
-
 
 void taskPublishData(){
   
@@ -178,54 +128,54 @@ void taskPublishData(){
   }
   client.loop();
 
-
   if(bufferCount > 0){
 
-  String payload = String(temperatureBuffer[0]);
+    String payload = String(temperatureBuffer[0]);
 
-  // LA RUTA CREA EL TOPIC DONDE SE PUBLICARÁ, EL PARAMETRO TRUE INDICA QUE SSE UTILIZARÁ EL MESSAGE RETAINED
-  //EL MESSAGE RETAINED SIRVE PARA QUE EN CUANTO UN NUEVO CLIENTE SE SUSCRIBA AL TOPIC, LEA EL UTLIMO MENSAJE
-  if(client.publish("sensor/temperatura", payload.c_str(), true)){
-        Serial.println("Temperatura publicada con éxito");
+    //The path sensor/temperature creates the topic on which the client will publish the data
+    //The true parameter activates the Message Retained option
+    //Message Retained option allows new subscribers to receive the last message sent
 
-        for(int i = 0; i<bufferCount - 1; i++){
-          temperatureBuffer[i] = temperatureBuffer[i+1];
-        }
-        bufferCount--;
+    if(client.publish("sensor/temperatura", payload.c_str(), true)){
+          Serial.println("Temperature successfully published");
 
-  }else{
-        Serial.println("Error al publicar la temperatura");
+          //FIFO structure
+          for(int i = 0; i<bufferCount - 1; i++){
+            //If data publish was successful
+            //We shift the values by one 
+            temperatureBuffer[i] = temperatureBuffer[i+1];
+          }
+          bufferCount--;
+
+    }else{
+          //In case of an error, data remains stored
+          Serial.println("Error while publishing the temperature");
+    }
+    
   }
-  
-}
 }
 
-
-void SPI_BIT_BANGING(uint8_t ClockCycles, uint16_t period){
+void spiBitBanging(uint8_t ClockCycles, uint16_t period){
   uint16_t buffer = 0;
 
   digitalWrite(CS, LOW);
   delay(1000);
 
-  //GENERATE N AMOUNT OF CLOCK CYCLES
+  //Generate N amount of Clock Cycles
   for (int i = 0; i<ClockCycles; i++){
 
-    //PULSO HIGH
+    //High pulse
     digitalWrite(SCK, HIGH);
     Serial.println("HIGH");
     delay(period/4);
 
-    //DATA SAMPLE
+    //Data sample time
     Serial.println("SAMPLE");
-
-
     dataStored <<= 1;
     dataStored |= digitalRead(MISO);
-    
     delay(period/4);
     
-    //LOW PULSE
-
+    //High pulse
     digitalWrite(SCK, LOW);
     Serial.println("LOW");
     delay(period/2);
@@ -238,8 +188,9 @@ void SPI_BIT_BANGING(uint8_t ClockCycles, uint16_t period){
 }
 
 bool connectMQTT(){
+
   if(!client.connected()){
-    Serial.println("Conectando a HIVEMQ..");
+    Serial.println("Connecting to HiveMQ..");
     String clientId = "ESP32S3-Client-";
     clientId += String(random(0xffff), HEX);
 
@@ -247,9 +198,9 @@ bool connectMQTT(){
       Serial.println("Conectado!");
       return true;
     }else{
-      Serial.print(" fallo, rc=");
+      Serial.print(" error, rc=");
       Serial.print(client.state());
-      Serial.println("Intentando de nuevo en 5 segundos");
+      Serial.println("Retrying in 5 seconds");
       return false;
 
     }
@@ -258,11 +209,11 @@ bool connectMQTT(){
 
 }
 
-
 void taskCheckWiFi(){
 
-
+  //First check if wifi is not currently connected
   if(WiFi.status() != WL_CONNECTED){
+      //If it was connected previously, it means it disconnected
       if(wifiConnectedPreviously){
         Serial.println("Wifi disconnected, retrying");
         WiFi.begin(SSID, PASSWORD);
@@ -270,9 +221,14 @@ void taskCheckWiFi(){
       }
 
   }else{
+
+    // WiFi is connected
+    //If it was not connected previously, it has reconnected
     if(!wifiConnectedPreviously){
       Serial.print("IP ADDRESS: ");
       Serial.println(WiFi.localIP());
+
+      //We set the flag to make sure to only run once this section
       wifiConnectedPreviously = true;
     } 
   }
@@ -281,5 +237,26 @@ void taskCheckWiFi(){
     configTime(0,0,"pool.ntp.org", "time.nist.gov"); //NEED TO GET THE CURRENT TIME SO THE CERTIFICATE WONT INVALIDATE THE CONNECTION
     Serial.println("Sincronizando hora");
   }
+
+}
+
+void startupConnectionConfig(){
+
+  //WiFi connection
+
+  WiFi.begin(SSID, PASSWORD);
+  while(WiFi.status()!= WL_CONNECTED){
+    delay(500);
+    Serial.print(".");
+  }
+
+  Serial.println("IP address: ");
+  Serial.println(WiFi.localIP());
+  wifiConnectedPreviously = true;
+
+  //MQTT configuration
+
+  espClient.setInsecure();
+  client.setServer(mqtt_url, mqtt_port);
 
 }

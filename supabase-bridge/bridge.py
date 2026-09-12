@@ -15,7 +15,7 @@ port = 8883
 topic = "sensor/temperatura"
 client_id = "python-supabase-local-bridge"
 username = "esp32_s3"
-password = "passwordjeje" #different from esp32? or equal?
+password = "passwordjeje"
 
 #connection events
 
