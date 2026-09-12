@@ -38,6 +38,9 @@ const long wifiCheckInterval = 5000; //USed in milis
 uint16_t bufferCount = 0;
 
 
+
+//credentials
+
 const char* mqtt_url = "bdd53fed217747629eb941f979434002.s1.eu.hivemq.cloud";
 const int mqtt_port = 8883;
 
@@ -76,9 +79,7 @@ void setup() {
   Serial.begin(115200);
 
   // Espera a que el puerto serial esté activo
-  while (!Serial) {
-    delay(10);
-  }
+  
   delay(1500); // Margen para que el monitor serie enganche
 
   Serial.println("LISTO");
@@ -95,6 +96,7 @@ void setup() {
 
   delay(3000);
 
+  //conecction wifi
 
   WiFi.begin(SSID, PASSWORD);
   while(WiFi.status()!= WL_CONNECTED){
